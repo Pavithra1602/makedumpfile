@@ -69,6 +69,10 @@ endif
 
 LIBS := -lpthread $(LIBS)
 
+CFLAGS += -I/home/tesarik/src/kdump/inst/include
+LDFLAGS += -L/home/tesarik/src/kdump/inst/lib64
+LIBS += -lkdumpfile
+
 all: makedumpfile
 
 $(OBJ_PART): $(SRC_PART)
