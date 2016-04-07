@@ -19,7 +19,6 @@
 #include "elf_info.h"
 #include "erase_info.h"
 #include "sadump_info.h"
-#include "cache.h"
 #include <stddef.h>
 #include <ctype.h>
 #include <sys/time.h>
@@ -43,10 +42,6 @@ int nr_gvmem_pfns;
 extern int find_vmemmap();
 
 char filename_stdout[] = FILENAME_STDOUT;
-
-/* Cache statistics */
-static unsigned long long	cache_hit;
-static unsigned long long	cache_miss;
 
 static void first_cycle(mdf_pfn_t start, mdf_pfn_t max, struct cycle *cycle)
 {
@@ -3273,9 +3268,6 @@ out:
 			return FALSE;
 		}
 	}
-
-	if (!is_xen_memory() && !cache_init())
-		return FALSE;
 
 	if (debug_info && !get_machdep_info())
 		return FALSE;
@@ -8682,9 +8674,6 @@ out:
 			return FALSE;
 	}
 
-	if (!cache_init())
-		return FALSE;
-
 	if (xen_info_required == TRUE) {
 		if (!get_xen_info())
 			return FALSE;
@@ -8726,6 +8715,9 @@ void
 print_report(void)
 {
 	mdf_pfn_t pfn_original, pfn_excluded, shrinking;
+	unsigned long long cache_hit, cache_miss, cache_total;
+	kdump_attr_t attr;
+	kdump_status status;
 
 	/*
 	 * /proc/vmcore doesn't contain the memory hole area.
@@ -8755,11 +8747,27 @@ print_report(void)
 	REPORT_MSG("--------------------------------------------------\n");
 	REPORT_MSG("Total pages     : 0x%016llx\n", info->max_mapnr);
 	REPORT_MSG("\n");
-	REPORT_MSG("Cache hit: %lld, miss: %lld", cache_hit, cache_miss);
-	if (cache_hit + cache_miss)
-		REPORT_MSG(", hit rate: %.1f%%",
-		    100.0 * cache_hit / (cache_hit + cache_miss));
-	REPORT_MSG("\n\n");
+
+	status = kdump_get_attr(info->ctx_memory, "cache.hits", &attr);
+	if (status == kdump_ok)
+		cache_hit = attr.val.number;
+	if (status == kdump_ok)
+		status = kdump_get_attr(info->ctx_memory, "cache.misses", &attr);
+	if (status == kdump_ok) {
+		cache_miss = attr.val.number;
+
+		REPORT_MSG("Cache hit: %lld, miss: %lld",
+			   cache_hit, cache_miss);
+		cache_total = cache_hit + cache_miss;
+		if (cache_total)
+			REPORT_MSG(", hit rate: %.1f%%",
+				   100.0 * cache_hit / cache_total);
+		REPORT_MSG("\n");
+	} else
+		ERRMSG("Cannot get cache statistics: %s\n",
+		       kdump_err_str(info->ctx_memory));
+
+	REPORT_MSG("\n");
 }
 
 static void
