@@ -253,34 +253,6 @@ vtop_ia64(unsigned long vaddr)
 }
 
 /*
- * Translate a virtual address to physical address.
- */
-unsigned long long
-vaddr_to_paddr_ia64(unsigned long vaddr)
-{
-	unsigned long long paddr;
-
-	switch (VADDR_REGION(vaddr)) {
-		case KERNEL_CACHED_REGION:
-			paddr = vaddr - (ulong)(KERNEL_CACHED_BASE);
-			break;
-
-		case KERNEL_UNCACHED_REGION:
-			paddr = vaddr - (ulong)(KERNEL_UNCACHED_BASE);
-			break;
-
-		case KERNEL_VMALLOC_REGION:
-			paddr = vtop_ia64(vaddr);
-			break;
-
-		default:
-			ERRMSG("Unknown region (%ld)\n", VADDR_REGION(vaddr));
-			return 0x0;
-	}
-	return paddr;
-}
-
-/*
  * for Xen extraction
  */
 unsigned long long

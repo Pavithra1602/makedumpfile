@@ -228,41 +228,6 @@ is_vmalloc_addr_x86(unsigned long vaddr)
 	return (info->vmalloc_start && vaddr >= info->vmalloc_start);
 }
 
-unsigned long long
-vaddr_to_paddr_x86(unsigned long vaddr)
-{
-	unsigned long long paddr;
-
-	if ((paddr = vtop_x86_remap(vaddr)) != NOT_PADDR)
-		return paddr;
-
-	if ((paddr = vaddr_to_paddr_general(vaddr)) != NOT_PADDR)
-		return paddr;
-
-	if (((SYMBOL(vmap_area_list) == NOT_FOUND_SYMBOL)
-	     || (OFFSET(vmap_area.va_start) == NOT_FOUND_STRUCTURE)
-	     || (OFFSET(vmap_area.list) == NOT_FOUND_STRUCTURE))
-	    && ((SYMBOL(vmlist) == NOT_FOUND_SYMBOL)
-		|| (OFFSET(vm_struct.addr) == NOT_FOUND_STRUCTURE))) {
-		ERRMSG("Can't get necessary information for vmalloc translation.\n");
-		return NOT_PADDR;
-	}
-	if (!is_vmalloc_addr_x86(vaddr))
-		return (vaddr - info->kernel_start);
-
-	if (vt.mem_flags & MEMORY_X86_PAE) {
-		paddr = vtop_x86_PAE(vaddr);
-	} else {
-		/*
-		 * TODO: Support vmalloc translation of not-PAE kernel.
-		 */
-		ERRMSG("This makedumpfile does not support vmalloc translation of not-PAE kernel.\n");
-		return NOT_PADDR;
-	}
-
-	return paddr;
-}
-
 /*
  * for Xen extraction
  */

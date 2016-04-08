@@ -124,6 +124,24 @@ initialize_tables(void)
 }
 
 /*
+ * Translate a virtual address to a physical address.
+ */
+unsigned long long
+vaddr_to_paddr(unsigned long vaddr)
+{
+	kdump_paddr_t paddr;
+	kdump_status status;
+
+	status = kdump_vtop(info->ctx_memory, vaddr, &paddr);
+	if (status != kdump_ok) {
+		ERRMSG("Can't convert a virtual address (0x%lx) to physical address: %s.\n",
+		       vaddr, kdump_err_str(info->ctx_memory));
+		return NOT_PADDR;
+	}
+	return paddr;
+}
+
+/*
  * Translate a domain-0's physical address to machine address.
  */
 unsigned long long
@@ -325,40 +343,35 @@ int
 readmem(int type_addr, unsigned long long addr, void *bufptr, size_t size)
 {
 	size_t read_size, size_orig = size;
-	unsigned long long paddr, maddr = NOT_PADDR;
+	kdump_paddr_t paddr;
+	kdump_maddr_t maddr;
+	kdump_status status;
 
 next_page:
 	switch (type_addr) {
 	case VADDR:
-		if ((paddr = vaddr_to_paddr(addr)) == NOT_PADDR) {
-			ERRMSG("Can't convert a virtual address(%llx) to physical address.\n",
-			    addr);
+		status = kdump_vtom(info->ctx_memory, addr, &maddr);
+		if (status != kdump_ok) {
+			ERRMSG("Can't convert a virtual address (0x%llx) to physical address: %s.\n",
+			       addr, kdump_err_str(info->ctx_memory));
 			goto error;
 		}
-		if (is_xen_memory()) {
-			if ((maddr = ptom_xen(paddr)) == NOT_PADDR) {
-				ERRMSG("Can't convert a physical address(%llx) to machine address.\n",
-				    paddr);
-				return FALSE;
-			}
-			paddr = maddr;
-		}
+		paddr = maddr;
 		break;
 	case PADDR:
-		paddr = addr;
-		if (is_xen_memory()) {
-			if ((maddr  = ptom_xen(paddr)) == NOT_PADDR) {
-				ERRMSG("Can't convert a physical address(%llx) to machine address.\n",
-				    paddr);
-				return FALSE;
-			}
-			paddr = maddr;
+		status = kdump_ptom(info->ctx_memory, addr, &maddr);
+		if (status != kdump_ok) {
+			ERRMSG("Can't convert a physical address (0x%llx) to machine address: %s.\n",
+			       addr, kdump_err_str(info->ctx_memory));
+			goto error;
 		}
+		paddr = maddr;
 		break;
 	case VADDR_XEN:
-		if ((paddr = kvtop_xen(addr)) == NOT_PADDR) {
-			ERRMSG("Can't convert a virtual address(%llx) to machine address.\n",
-			    addr);
+		status = kdump_vtop_xen(info->ctx_memory, addr, &paddr);
+		if (status != kdump_ok) {
+			ERRMSG("Can't convert a virtual address (0x%llx) to machine address: %s.\n",
+			       addr, kdump_err_str(info->ctx_memory));
 			goto error;
 		}
 		break;
@@ -3142,6 +3155,12 @@ initial(void)
 		if (!read_vmcoreinfo_from_vmcore(offset, size, FALSE))
 			return FALSE;
 		debug_info = TRUE;
+	}
+
+	if (kdump_vtop_init(info->ctx_memory) != kdump_ok) {
+		ERRMSG("Can't set up virtual-to-physical translation: %s\n",
+		       kdump_err_str(info->ctx_memory));
+		return FALSE;
 	}
 
 	if (!get_value_for_old_linux())
@@ -8664,6 +8683,12 @@ initial_xen(void)
 			return FALSE;
 	}
 
+	if (kdump_vtop_init_xen(info->ctx_memory) != kdump_ok) {
+		ERRMSG("Can't set up Xen virtual-to-physical translation: %s\n",
+		       kdump_err_str(info->ctx_memory));
+		return FALSE;
+	}
+
 out:
 	if (!info->page_size) {
 		/*
@@ -8692,7 +8717,8 @@ out:
 void
 print_vtop(void)
 {
-	unsigned long long paddr;
+	kdump_paddr_t paddr;
+	kdump_status status;
 
 	if (!info->vaddr_for_vtop)
 		return;
@@ -8700,10 +8726,16 @@ print_vtop(void)
 	MSG("\n");
 	MSG("Translating virtual address %lx to physical address.\n", info->vaddr_for_vtop);
 
-	paddr = vaddr_to_paddr(info->vaddr_for_vtop);
-
+	status = kdump_vtop(info->ctx_memory, info->vaddr_for_vtop, &paddr);
 	MSG("VIRTUAL           PHYSICAL\n");
-	MSG("%16lx  %llx\n", info->vaddr_for_vtop, paddr);
+	if (status == kdump_ok)
+		MSG("%16lx  %llx\n", info->vaddr_for_vtop,
+		    (unsigned long long) paddr);
+	else {
+		MSG("%16lx  -\n", info->vaddr_for_vtop);
+		MSG("    %s\n", kdump_err_str(info->ctx_memory));
+	}
+
 	MSG("\n");
 
 	info->vaddr_for_vtop = 0;

@@ -171,17 +171,6 @@ static int calculate_plat_config(void)
 	return TRUE;
 }
 
-static int
-is_vtop_from_page_table_arm64(unsigned long vaddr)
-{
-	/* If virtual address lies in vmalloc, vmemmap or module space
-	 * region then, get the physical address from page table.
-	 */
-	return ((vaddr >= VMALLOC_START && vaddr <= VMALLOC_END)
-		|| (vaddr >= VMEMMAP_START && vaddr <= VMEMMAP_END)
-		|| (vaddr >= MODULES_VADDR && vaddr <= MODULES_END));
-}
-
 int
 get_phys_base_arm64(void)
 {
@@ -265,83 +254,4 @@ get_versiondep_info_arm64(void)
 	return TRUE;
 }
 
-/*
- * vtop_arm64() - translate arbitrary virtual address to physical
- * @vaddr: virtual address to translate
- *
- * Function translates @vaddr into physical address using page tables. This
- * address can be any virtual address. Returns physical address of the
- * corresponding virtual address or %NOT_PADDR when there is no translation.
- */
-static unsigned long long
-vtop_arm64(unsigned long vaddr)
-{
-	unsigned long long paddr = NOT_PADDR;
-	pgd_t	*pgda, pgdv;
-	pud_t	*puda, pudv;
-	pmd_t	*pmda, pmdv;
-	pte_t 	*ptea, ptev;
-
-	if (SYMBOL(swapper_pg_dir) == NOT_FOUND_SYMBOL) {
-		ERRMSG("Can't get the symbol of swapper_pg_dir.\n");
-		return NOT_PADDR;
-	}
-
-	pgda = pgd_offset(SYMBOL(swapper_pg_dir), vaddr);
-	if (!readmem(VADDR, (unsigned long long)pgda, &pgdv, sizeof(pgdv))) {
-		ERRMSG("Can't read pgd\n");
-		return NOT_PADDR;
-	}
-
-	pudv.pgd = pgdv;
-
-	pmda = pmd_offset(&pudv, vaddr);
-	if (!readmem(VADDR, (unsigned long long)pmda, &pmdv, sizeof(pmdv))) {
-		ERRMSG("Can't read pmd\n");
-		return NOT_PADDR;
-	}
-
-	switch (pmd_val(pmdv) & PMD_TYPE_MASK) {
-	case PMD_TYPE_TABLE:
-		ptea = pte_offset(&pmdv, vaddr);
-		/* 64k page */
-		if (!readmem(VADDR, (unsigned long long)ptea, &ptev, sizeof(ptev))) {
-			ERRMSG("Can't read pte\n");
-			return NOT_PADDR;
-		}
-
-		if (!(pte_val(ptev) & PAGE_PRESENT)) {
-			ERRMSG("Can't get a valid pte.\n");
-			return NOT_PADDR;
-		} else {
-
-			paddr = (PAGEBASE(pte_val(ptev)) & PHYS_MASK)
-					+ (vaddr & (PAGESIZE() - 1));
-		}
-		break;
-	case PMD_TYPE_SECT:
-		/* 1GB section */
-		paddr = (pmd_val(pmdv) & (PMD_MASK & PMD_SECTION_MASK))
-					+ (vaddr & (PMD_SIZE - 1));
-		break;
-	}
-
-	return paddr;
-}
-
-unsigned long long
-vaddr_to_paddr_arm64(unsigned long vaddr)
-{
-	/*
-	 * use translation tables when a) user has explicitly requested us to
-	 * perform translation for a given address. b) virtual address lies in
-	 * vmalloc, vmemmap or modules memory region. Otherwise we assume that
-	 * the translation is done within the kernel direct mapped region.
-	 */
-	if ((info->vaddr_for_vtop == vaddr) ||
-			is_vtop_from_page_table_arm64(vaddr))
-		return vtop_arm64(vaddr);
-
-	return __pa(vaddr);
-}
 #endif /* __aarch64__ */

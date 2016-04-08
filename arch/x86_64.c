@@ -269,38 +269,6 @@ vtop4_x86_64(unsigned long vaddr)
 	return (pte & ENTRY_MASK) + PAGEOFFSET(vaddr);
 }
 
-unsigned long long
-vaddr_to_paddr_x86_64(unsigned long vaddr)
-{
-	unsigned long phys_base;
-	unsigned long long paddr;
-
-	/*
-	 * Check the relocatable kernel.
-	 */
-	if (SYMBOL(phys_base) != NOT_FOUND_SYMBOL)
-		phys_base = info->phys_base;
-	else
-		phys_base = 0;
-
-	if (is_vmalloc_addr_x86_64(vaddr)) {
-		if ((paddr = vtop4_x86_64(vaddr)) == NOT_PADDR) {
-			ERRMSG("Can't convert a virtual address(%lx) to " \
-			    "physical address.\n", vaddr);
-			return NOT_PADDR;
-		}
-	} else if (vaddr >= __START_KERNEL_map) {
-		paddr = vaddr - __START_KERNEL_map + phys_base;
-
-	} else {
-		if (is_xen_memory())
-			paddr = vaddr - PAGE_OFFSET_XEN_DOM0;
-		else
-			paddr = vaddr - PAGE_OFFSET;
-	}
-	return paddr;
-}
-
 /*
  * for Xen extraction
  */
